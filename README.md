@@ -34,6 +34,30 @@ graph TD
 -   `db-kakebo/`: 家計簿データを管理するAPIサーバーおよびデータベース関連
 -   `docs/`: プロジェクトの設計書やAPI仕様書などのドキュメント
 
+## セットアップ手順
+
+1. **リポジトリをクローンします。**
+   ```bash
+   git clone https://github.com/imohiyoko/photo_kakebo.git
+   cd photo_kakebo
+   ```
+
+2. **バックエンドの依存関係をインストールします。**
+   ```bash
+   cd db-kakebo
+   npm install
+   ```
+
+3. **バックエンドサーバーを起動します。**
+   ```bash
+   npm start
+   ```
+   サーバーが `http://localhost:3000` で起動します。
+
+4. **フロントエンドを確認します。**
+   ブラウザで `frontend/index.html` を開きます。
+
+
 ## 今後のステップ
 
 1.  **プロトタイピング**
