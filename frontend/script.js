@@ -60,6 +60,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalAmountInput.value = (result.extractedData.totalAmount != null ? result.extractedData.totalAmount : '');
             }
 
+            // --- itemLinesをテーブル表示 ---
+            const itemLinesSection = document.getElementById('item-lines-section');
+            const itemLinesTbody = document.getElementById('item-lines-tbody');
+            if (Array.isArray(result.itemLines) && result.itemLines.length > 0) {
+                itemLinesSection.style.display = 'block';
+                itemLinesTbody.innerHTML = '';
+                result.itemLines.forEach(line => {
+                    const tr = document.createElement('tr');
+                    const tdText = document.createElement('td');
+                    const tdPrice = document.createElement('td');
+                    tdText.textContent = line.text;
+                    tdPrice.textContent = line.price || '';
+                    tr.appendChild(tdText);
+                    tr.appendChild(tdPrice);
+                    itemLinesTbody.appendChild(tr);
+                });
+            } else {
+                itemLinesSection.style.display = 'none';
+            }
+
         } catch (error) {
             console.error('アップロードまたは解析中にエラーが発生しました:', error);
             statusDiv.textContent = `エラーが発生しました: ${error.message}`;
