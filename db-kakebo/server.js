@@ -3,8 +3,12 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { createWorker } = require('tesseract.js');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
+app.use(express.json()); // Add this line to parse JSON bodies
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 const port = 3000;
 
 // Create uploads directory if it doesn't exist
@@ -46,11 +50,20 @@ app.post('/api/upload', upload.single('receiptImage'), async (req, res) => {
         await worker.terminate();
 
         res.json({
-            message: 'OCR処理が完了しました。',
-            filePath: req.file.path,
+            message: 'File uploaded successfully!',
+            filePath: `/uploads/${req.file.filename}`,
             ocrText: text
         });
 
+        // Insert initial data into the database
+        db.run(`INSERT INTO entries (image_path, ocr_text) VALUES (?, ?)`,
+            [`/uploads/${req.file.filename}`, text], function(err) {
+            if (err) {
+                return console.error(err.message);
+            }
+            console.log(`A row has been inserted with rowid ${this.lastID}`);
+            // We can optionally send this ID to the frontend if needed for subsequent updates.
+        });
     } catch (error) {
         console.error('OCR処理中にエラーが発生しました:', error);
         res.status(500).json({
@@ -60,6 +73,25 @@ app.post('/api/upload', upload.single('receiptImage'), async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`db-kakebo server listening at http://localhost:${port}`);
+// API endpoint to save corrected text and other details
+app.post('/api/save', (req, res) => {
+    const { imagePath, correctedText, totalAmount, storeName, purchaseDate } = req.body;
+
+    if (!imagePath) {
+        return res.status(400).json({ error: 'imagePath is required' });
+    }
+
+    // Here, we find the entry by image_path and update it.
+    // A more robust approach might use the ID returned upon creation.
+    db.run(`UPDATE entries SET corrected_text = ?, total_amount = ?, store_name = ?, purchase_date = ? WHERE image_path = ?`,
+        [correctedText, totalAmount, storeName, purchaseDate, imagePath], function(err) {
+        if (err) {
+            console.error(err.message);
+            return res.status(500).json({ error: 'Failed to save data' });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ error: 'Entry not found for the given imagePath' });
+        }
+        res.json({ message: 'Data saved successfully!' });
+    });
 });
