@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "start": "node db-kakebo/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "form-data": "^4.0.4",
+    "node-fetch": "^3.3.2",
+    "tmp": "^0.2.5"
+  }
+}
