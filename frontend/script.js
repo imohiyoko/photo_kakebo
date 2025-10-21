@@ -90,5 +90,35 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.textContent = `保存エラー: ${error.message}`;
         }
     });
+
+    // Function to fetch and display entries
+    const fetchEntries = async () => {
+        try {
+            const response = await fetch('http://localhost:3000/api/entries');
+            if (!response.ok) {
+                throw new Error(`サーバーエラー: ${response.statusText}`);
+            }
+            const entries = await response.json();
+            const tbody = document.getElementById('entries-tbody');
+            tbody.innerHTML = ''; // Clear existing rows
+
+            entries.forEach(entry => {
+                const row = tbody.insertRow();
+                const dateCell = row.insertCell();
+                const storeCell = row.insertCell();
+                const amountCell = row.insertCell();
+
+                dateCell.textContent = entry.purchase_date;
+                storeCell.textContent = entry.store_name;
+                amountCell.textContent = entry.total_amount;
+            });
+
+        } catch (error) {
+            console.error('データの取得中にエラーが発生しました:', error);
+        }
+    };
+
+    // Fetch entries on page load
+    fetchEntries();
 });
 
