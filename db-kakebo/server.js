@@ -59,9 +59,7 @@ app.post('/upload', upload.single('receipt'), async (req, res) => {
     console.log('Starting OCR process...');
 
     try {
-        const worker = await createWorker();
-        await worker.loadLanguage('jpn');
-        await worker.initialize('jpn');
+        const worker = await createWorker('jpn');
         const { data: { text } } = await worker.recognize(req.file.path);
         await worker.terminate();
 
