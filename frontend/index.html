@@ -8,20 +8,38 @@
 </head>
 <body>
     <div class="container">
-        <h1>レシート・領収書アップロード</h1>
-        <p>解析したいレシートの画像ファイルを選択してください。</p>
-        
-        <input type="file" id="receiptImage" accept="image/*">
-        <button id="uploadButton">解析する</button>
+        <h1>Photo Kakebo</h1>
+        <form id="upload-form">
+            <input type="file" id="receiptImage" accept="image/*">
+            <button type="submit" class="btn btn-primary">Upload and Analyze</button>
+        </form>
 
-        <h2>プレビュー</h2>
-        <div class="preview" id="imagePreview">
-            <p>画像を選択するとここにプレビューが表示されます。</p>
-        </div>
-
-        <h2>OCR解析結果</h2>
-        <div class="result" id="ocrResult" contenteditable="true">
-            <p>解析ボタンを押すとここに結果が表示されます。</p>
+        <div id="result" style="margin-top: 20px;">
+            <h2>OCR Result</h2>
+            <img id="uploaded-image" src="" alt="Uploaded Image" style="display: none; max-width: 100%; height: auto; margin-bottom: 20px;">
+            
+            <div id="edit-form" style="display: none;">
+                <input type="hidden" id="image-path">
+                <div class="form-group">
+                    <label for="ocr-text-area">OCR Text (Editable)</label>
+                    <textarea id="ocr-text-area" rows="10" class="form-control"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="store-name">Store Name</label>
+                    <input type="text" id="store-name" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="purchase-date">Purchase Date</label>
+                    <input type="date" id="purchase-date" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="total-amount">Total Amount</label>
+                    <input type="number" id="total-amount" class="form-control" placeholder="e.g., 1234">
+                </div>
+                <button id="save-button" class="btn btn-success">Save Data</button>
+            </div>
+            
+            <div id="status"></div>
         </div>
     </div>
 
