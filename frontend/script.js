@@ -1,27 +1,20 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const imageInput = document.getElementById('receiptImage');
-    const imagePreview = document.getElementById('imagePreview');
-    const uploadButton = document.getElementById('uploadButton');
-    const ocrResult = document.getElementById('ocrResult');
+    const uploadForm = document.getElementById('upload-form');
+    const imageInput = document.getElementById('receipt-image');
+    const uploadedImage = document.getElementById('uploaded-image');
+    const statusDiv = document.getElementById('status');
+    
+    const editForm = document.getElementById('edit-form');
+    const imagePathInput = document.getElementById('image-path');
+    const ocrTextArea = document.getElementById('ocr-text-area');
+    const storeNameInput = document.getElementById('store-name');
+    const purchaseDateInput = document.getElementById('purchase-date');
+    const totalAmountInput = document.getElementById('total-amount');
+    const saveButton = document.getElementById('save-button');
 
-    imageInput.addEventListener('change', () => {
-        const file = imageInput.files[0];
-        if (!file) {
-            imagePreview.innerHTML = '<p>画像を選択するとここにプレビューが表示されます。</p>';
-            return;
-        }
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            imagePreview.innerHTML = ''; // 既存のテキストをクリア
-            const img = document.createElement('img');
-            img.src = e.target.result;
-            imagePreview.appendChild(img);
-        };
-        reader.readAsDataURL(file);
-    });
-
-    uploadButton.addEventListener('click', async () => {
         const file = imageInput.files[0];
         if (!file) {
             alert('画像ファイルを選択してください。');
@@ -29,12 +22,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const formData = new FormData();
-        formData.append('receiptImage', file);
+        formData.append('receipt', file);
 
-        ocrResult.innerHTML = '<p>解析中です...</p>';
+        statusDiv.textContent = '解析中です...';
+        editForm.style.display = 'none';
+        uploadedImage.style.display = 'none';
 
         try {
-            const response = await fetch('http://localhost:3000/api/upload', {
+            const response = await fetch('http://localhost:3000/upload', {
                 method: 'POST',
                 body: formData,
             });
@@ -45,12 +40,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const result = await response.json();
             
-            // 結果を整形して表示
-            ocrResult.innerText = result.ocrText;
+            statusDiv.textContent = '解析が完了しました。内容を確認・修正してください。';
+            
+            // 結果をフォームに表示
+            uploadedImage.src = `http://localhost:3000${result.filePath}`;
+            uploadedImage.style.display = 'block';
+            
+            imagePathInput.value = result.filePath;
+            ocrTextArea.value = result.ocrText;
+
+            editForm.style.display = 'block';
 
         } catch (error) {
             console.error('アップロードまたは解析中にエラーが発生しました:', error);
-            ocrResult.innerHTML = `<p>エラーが発生しました: ${error.message}</p>`;
+            statusDiv.textContent = `エラーが発生しました: ${error.message}`;
+        }
+    });
+
+    saveButton.addEventListener('click', async () => {
+        const data = {
+            imagePath: imagePathInput.value,
+            correctedText: ocrTextArea.value,
+            storeName: storeNameInput.value,
+            purchaseDate: purchaseDateInput.value,
+            totalAmount: totalAmountInput.value ? parseInt(totalAmountInput.value, 10) : null,
+        };
+
+        statusDiv.textContent = '保存中です...';
+
+        try {
+            const response = await fetch('http://localhost:3000/api/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                throw new Error(`サーバーエラー: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            statusDiv.textContent = result.message;
+            alert('保存しました！');
+
+        } catch (error) {
+            console.error('データの保存中にエラーが発生しました:', error);
+            statusDiv.textContent = `保存エラー: ${error.message}`;
         }
     });
 });
+
