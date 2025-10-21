@@ -28,3 +28,9 @@ yarn-error.log*
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# node.js
+/db-kakebo/node_modules
+# もしくは単に
+# node_modules/
+zsh: no such file or directory: /db-kakebo/node_modules
