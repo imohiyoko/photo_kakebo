@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const purchaseDateInput = document.getElementById('purchase-date');
     const totalAmountInput = document.getElementById('total-amount');
     const saveButton = document.getElementById('save-button');
+    // 現在編集中のエントリID保持用
+    let currentEntryId = null;
 
     uploadForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -42,14 +44,21 @@ document.addEventListener('DOMContentLoaded', () => {
             
             statusDiv.textContent = '解析が完了しました。内容を確認・修正してください。';
             
-            // 結果をフォームに表示
+            // 結果をフォームに表示 + 抽出データを自動入力
             uploadedImage.src = `http://localhost:3000${result.filePath}`;
             uploadedImage.style.display = 'block';
-            
+
+            editForm.style.display = 'block';
+
+            currentEntryId = result.id || null;
             imagePathInput.value = result.filePath;
             ocrTextArea.value = result.ocrText;
 
-            editForm.style.display = 'block';
+            if (result.extractedData) {
+                storeNameInput.value = result.extractedData.storeName || '';
+                purchaseDateInput.value = result.extractedData.purchaseDate || '';
+                totalAmountInput.value = (result.extractedData.totalAmount != null ? result.extractedData.totalAmount : '');
+            }
 
         } catch (error) {
             console.error('アップロードまたは解析中にエラーが発生しました:', error);
@@ -59,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     saveButton.addEventListener('click', async () => {
         const data = {
-            imagePath: imagePathInput.value,
+            id: currentEntryId,
             correctedText: ocrTextArea.value,
             storeName: storeNameInput.value,
             purchaseDate: purchaseDateInput.value,
