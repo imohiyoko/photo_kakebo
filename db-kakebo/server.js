@@ -1,9 +1,14 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { createWorker } = require('tesseract.js');
 const sqlite3 = require('sqlite3').verbose();
+
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+const tmp = require('tmp');
 
 const app = express();
 app.use(express.json());
@@ -160,24 +165,59 @@ app.post('/upload', upload.single('receipt'), async (req, res) => {
     console.log('Starting OCR process...');
 
     try {
+        // 1. Python前処理APIへ画像送信
+        let ocrInputPath = req.file.path;
+        try {
+            const form = new FormData();
+            form.append('image', fs.createReadStream(req.file.path));
+            const preprocessApiUrl = process.env.PREPROCESS_API_URL || 'http://localhost:5001/crop_receipt';
+            const resp = await fetch(preprocessApiUrl, {
+                method: 'POST',
+                body: form
+            });
+            if (resp.ok) {
+                // 一時ファイルに保存
+                const tmpFile = tmp.fileSync({ postfix: '.jpg', keep: true });
+                const dest = fs.createWriteStream(tmpFile.name);
+                await new Promise((resolve, reject) => {
+                    resp.body.pipe(dest);
+                    resp.body.on('end', resolve);
+                    resp.body.on('error', reject);
+                });
+                ocrInputPath = tmpFile.name;
+                console.log('Preprocessed image saved:', ocrInputPath);
+                // processedディレクトリにコピーして恒久保存
+                const processedDir = path.join(__dirname, 'processed');
+                if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir);
+                const processedPath = path.join(processedDir, path.basename(tmpFile.name));
+                fs.copyFileSync(tmpFile.name, processedPath);
+                console.log('Processed image copied to:', processedPath);
+            } else {
+                console.warn('Preprocess API error, fallback to original:', await resp.text());
+            }
+        } catch (e) {
+            console.warn('Preprocess API failed, fallback to original:', e);
+        }
+
+        // 2. OCR
         const worker = await createWorker('jpn');
-            const { data } = await worker.recognize(req.file.path);
+        const { data } = await worker.recognize(ocrInputPath);
         await worker.terminate();
 
-            const text = data.text;
-            console.log('OCR Result:', text);
+        const text = data.text;
+        console.log('OCR Result:', text);
 
-            // 単語ごとの座標情報抽出
-            let words = [];
-            if (Array.isArray(data.words)) {
-                words = data.words.map(w => ({
-                    text: w.text,
-                    bbox: [w.bbox?.x0 ?? w.bbox?.x ?? 0, w.bbox?.y0 ?? w.bbox?.y ?? 0, w.bbox?.x1 ?? (w.bbox?.x0 ?? w.bbox?.x ?? 0) + (w.bbox?.w ?? 0), w.bbox?.y1 ?? (w.bbox?.y0 ?? w.bbox?.y ?? 0) + (w.bbox?.h ?? 0)]
-                })).filter(w => w.text && w.text.length > 0);
-            }
+        // 単語ごとの座標情報抽出
+        let words = [];
+        if (Array.isArray(data.words)) {
+            words = data.words.map(w => ({
+                text: w.text,
+                bbox: [w.bbox?.x0 ?? w.bbox?.x ?? 0, w.bbox?.y0 ?? w.bbox?.y ?? 0, w.bbox?.x1 ?? (w.bbox?.x0 ?? w.bbox?.x ?? 0) + (w.bbox?.w ?? 0), w.bbox?.y1 ?? (w.bbox?.y0 ?? w.bbox?.y ?? 0) + (w.bbox?.h ?? 0)]
+            })).filter(w => w.text && w.text.length > 0);
+        }
 
-            // 行アイテム抽出（同一行クラスタリング＋右端価格推定）
-            const itemLines = extractItemLines(words);
+        // 行アイテム抽出（同一行クラスタリング＋右端価格推定）
+        const itemLines = extractItemLines(words);
 
         // 追加: OCRテキストから抽出データ生成
         const extracted = parseOcrText(text);
@@ -191,15 +231,15 @@ app.post('/upload', upload.single('receipt'), async (req, res) => {
                 return res.status(500).json({ error: 'データベース登録に失敗しました' });
             }
             console.log(`A row has been inserted with rowid ${this.lastID}`);
-                res.json({
-                    id: this.lastID,
-                    message: 'File uploaded & parsed successfully!',
-                    filePath: imagePath,
-                    ocrText: text,
-                    extractedData: extracted,
-                    words: words,
-                    itemLines: itemLines,
-                });
+            res.json({
+                id: this.lastID,
+                message: 'File uploaded & parsed successfully!',
+                filePath: imagePath,
+                ocrText: text,
+                extractedData: extracted,
+                words: words,
+                itemLines: itemLines,
+            });
         });
 
     } catch (error) {
