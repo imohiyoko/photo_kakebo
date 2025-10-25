@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>管理コンソール - User Flags</title>
+<style>
+body { font-family: sans-serif; margin:20px; }
+table { border-collapse: collapse; width: 100%; margin-top:12px; }
+th, td { border:1px solid #ccc; padding:4px 8px; font-size:0.85rem; }
+tr:nth-child(even){ background:#f9f9f9; }
+button { cursor:pointer; }
+#status { margin-top:12px; font-size:0.85rem; }
+.flex { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<h2>ユーザーフラグ一覧</h2>
+<div class="flex">
+  <button id="reload-btn">再読込</button>
+  <input type="text" id="user-id-input" placeholder="user_id" />
+  <label><input type="checkbox" id="provide-chk"> provide_training_data</label>
+  <label><input type="checkbox" id="local-chk"> local_training_enabled</label>
+  <button id="save-flag-btn">保存/更新</button>
+</div>
+<div id="status"></div>
+<table>
+  <thead>
+    <tr><th>user_id</th><th>provide_training_data</th><th>local_training_enabled</th><th>updated_at</th></tr>
+  </thead>
+  <tbody id="flags-tbody"></tbody>
+</table>
+<h2 style="margin-top:32px;">未同期学習データ (pending)</h2>
+<div class="flex">
+  <button id="pending-reload-btn">未同期再読込</button>
+  <button id="mark-synced-btn">選択を同期済みに更新</button>
+</div>
+<table>
+  <thead>
+    <tr><th></th><th>ID</th><th>user_id</th><th>entry_id</th><th>store_name</th><th>purchase_date</th><th>total_amount</th><th>created_at</th></tr>
+  </thead>
+  <tbody id="pending-tbody"></tbody>
+</table>
+<h2 style="margin-top:32px;">学習データエクスポート</h2>
+<div class="flex">
+  <select id="export-status">
+    <option value="pending">pending</option>
+    <option value="synced">synced</option>
+  </select>
+  <button id="export-json-btn">JSONダウンロード</button>
+  <button id="export-csv-btn">CSVダウンロード</button>
+</div>
+
+<h2 style="margin-top:32px;">LLM使用ログ</h2>
+<div class="flex">
+  <button id="llm-logs-reload">ログ再読込</button>
+  <input type="number" id="llm-logs-limit" value="100" min="1" style="width:80px;" />
+</div>
+<table>
+  <thead>
+    <tr><th>log_id</th><th>entry_id</th><th>lines</th><th>latency_ms</th><th>fallback</th><th>model_version</th><th>created_at</th></tr>
+  </thead>
+  <tbody id="llm-logs-tbody"></tbody>
+</table>
+
+<script>
+async function loadAllFlags(){
+  const st = document.getElementById('status');
+  st.textContent = '全件取得中...';
+  try {
+    const r = await fetch('http://localhost:3000/api/user/flags/all');
+    if(!r.ok) throw new Error('flags all fetch failed');
+    const arr = await r.json();
+    const tb = document.getElementById('flags-tbody');
+    tb.innerHTML='';
+    arr.forEach(j => {
+      const tr=document.createElement('tr');
+      [j.user_id, j.provide_training_data, j.local_training_enabled, j.updated_at].forEach(v=>{
+        const td=document.createElement('td'); td.textContent=v; tr.appendChild(td); });
+      tr.onclick=()=>{ document.getElementById('user-id-input').value=j.user_id; document.getElementById('provide-chk').checked=!!j.provide_training_data; document.getElementById('local-chk').checked=!!j.local_training_enabled; };
+      tb.appendChild(tr);
+    });
+    st.textContent = `取得完了 (${arr.length}件)`;
+  } catch(e){ st.textContent='一覧取得失敗: '+e.message; }
+}
+async function loadOne(uid){
+  const st = document.getElementById('status');
+  st.textContent = '読み込み中...';
+  try {
+    const r = await fetch('http://localhost:3000/api/user/flags/' + encodeURIComponent(uid));
+    if(!r.ok) throw new Error('fetch failed');
+    const j = await r.json();
+    const tb = document.getElementById('flags-tbody');
+    tb.innerHTML='';
+    const tr=document.createElement('tr');
+    [j.user_id, j.provide_training_data, j.local_training_enabled, j.updated_at].forEach(v=>{
+      const td=document.createElement('td'); td.textContent=v; tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+    document.getElementById('provide-chk').checked = !!j.provide_training_data;
+    document.getElementById('local-chk').checked = !!j.local_training_enabled;
+    st.textContent = '取得完了';
+  } catch(e){ st.textContent='取得失敗: '+e.message; }
+}
+async function saveFlag(){
+  const uid = document.getElementById('user-id-input').value.trim();
+  if(!uid){ alert('user_idを入力してください'); return; }
+  const body={
+    user_id: uid,
+    provide_training_data: document.getElementById('provide-chk').checked,
+    local_training_enabled: document.getElementById('local-chk').checked
+  };
+  const st = document.getElementById('status');
+  st.textContent='送信中...';
+  try {
+    const r = await fetch('http://localhost:3000/api/user/flags', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if(!r.ok) throw new Error('保存失敗');
+    st.textContent='保存しました';
+    loadOne(uid);
+  } catch(e){ st.textContent='保存エラー: '+e.message; }
+}
+// ---- 未同期学習データ表示 ----
+async function loadPending(){
+  const tb = document.getElementById('pending-tbody');
+  tb.innerHTML='';
+  try {
+    const r = await fetch('http://localhost:3000/api/training/pending');
+    if(!r.ok) throw new Error('pending fetch failed');
+    const rows = await r.json();
+    rows.forEach(rec => {
+      const tr=document.createElement('tr');
+      const selTd=document.createElement('td');
+      const chk=document.createElement('input'); chk.type='checkbox'; chk.value=rec.id; selTd.appendChild(chk); tr.appendChild(selTd);
+      [rec.id, rec.user_id, rec.entry_id, rec.store_name, rec.purchase_date, rec.total_amount, rec.created_at].forEach(v=>{ const td=document.createElement('td'); td.textContent=v||''; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  } catch(e) {
+    const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=8; td.textContent='取得失敗: '+e.message; tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+async function markSelectedSynced(){
+  const checks=[...document.querySelectorAll('#pending-tbody input[type=checkbox]:checked')];
+  if(checks.length===0){ alert('対象を選択してください'); return; }
+  const ids=checks.map(c=>parseInt(c.value,10)).filter(Number.isFinite);
+  try {
+    const r = await fetch('http://localhost:3000/api/training/mark_synced',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids}) });
+    if(!r.ok) throw new Error('mark synced failed');
+    await loadPending();
+    alert('同期状態更新しました');
+  } catch(e){ alert('更新失敗: '+e.message); }
+}
+// ---- エクスポート ----
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+async function exportJson(){
+  const status = document.getElementById('export-status').value;
+  const r = await fetch('http://localhost:3000/api/training/export.json?status='+encodeURIComponent(status));
+  const data = await r.json();
+  downloadBlob(JSON.stringify(data,null,2), `training_${status}.json`, 'application/json');
+}
+async function exportCsv(){
+  const status = document.getElementById('export-status').value;
+  const r = await fetch('http://localhost:3000/api/training/export.csv?status='+encodeURIComponent(status));
+  const txt = await r.text();
+  downloadBlob(txt, `training_${status}.csv`, 'text/csv');
+}
+// ---- LLMログ一覧 ----
+async function loadLlmLogs(){
+  const limit = parseInt(document.getElementById('llm-logs-limit').value,10) || 100;
+  const tb = document.getElementById('llm-logs-tbody');
+  tb.innerHTML='';
+  try {
+    const r = await fetch('http://localhost:3000/api/llm/logs?limit='+limit);
+    if(!r.ok) throw new Error('logs fetch failed');
+    const rows = await r.json();
+    rows.forEach(l => {
+      const tr=document.createElement('tr');
+      [l.log_id,l.entry_id,l.line_count,l.latency_ms,l.fallback_used,l.model_version,l.created_at].forEach(v=>{ const td=document.createElement('td'); td.textContent=v; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  } catch(e){
+    const tr=document.createElement('tr');
+    const td=document.createElement('td'); td.colSpan=7; td.textContent='取得失敗: '+e.message; tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+// イベント
+ document.getElementById('reload-btn').onclick=()=>{
+   const uid=document.getElementById('user-id-input').value.trim();
+   if(uid) loadOne(uid); else loadAllFlags();
+ };
+ document.getElementById('save-flag-btn').onclick=saveFlag;
+ document.getElementById('pending-reload-btn').onclick=loadPending;
+ document.getElementById('mark-synced-btn').onclick=markSelectedSynced;
+ document.getElementById('export-json-btn').onclick=exportJson;
+ document.getElementById('export-csv-btn').onclick=exportCsv;
+ document.getElementById('llm-logs-reload').onclick=loadLlmLogs;
+// 初期ロード
+loadAllFlags();
+loadPending();
+loadLlmLogs();
+</script>
+</body>
+</html>

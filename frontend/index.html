@@ -9,6 +9,15 @@
 <body>
     <div class="container">
         <h1>Photo Kakebo</h1>
+        <div id="model-version-box" style="margin:8px 0 16px; padding:8px; border:1px solid #ddd; background:#fafafa; font-size:0.9rem;">
+            <strong>モデルバージョン:</strong> <span id="model-version">(取得中)</span>
+            <label style="margin-left:16px;">
+                <input type="checkbox" id="llm-optin-chk"> 匿名データを中央へ提供
+            </label>
+            <label style="margin-left:16px;">
+                <input type="checkbox" id="local-train-chk"> ローカル学習のみ（中央送信停止）
+            </label>
+        </div>
                 <form id="upload-form" enctype="multipart/form-data" style="margin-bottom:16px;">
                         <input type="file" id="receipt-image" name="receipt" accept="image/*" required>
                         <fieldset style="border:1px solid #ccc; padding:8px; margin-top:12px;">

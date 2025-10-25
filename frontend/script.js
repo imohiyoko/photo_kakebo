@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const imageInput = document.getElementById('receipt-image');
     const uploadedImage = document.getElementById('uploaded-image');
     const statusDiv = document.getElementById('status');
+    const modelVersionSpan = document.getElementById('model-version');
+    const llmOptinChk = document.getElementById('llm-optin-chk');
+    const localTrainChk = document.getElementById('local-train-chk');
     
     const editForm = document.getElementById('edit-form');
     const imagePathInput = document.getElementById('image-path');
@@ -24,6 +27,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // 現在編集中のエントリID保持用
     let currentEntryId = null;
+
+    // --- モデルバージョン取得 & オプトイン送信 ---
+    async function fetchModelVersion() {
+        if (!modelVersionSpan) return;
+        try {
+            const resp = await fetch('http://localhost:3000/api/llm/model/latest');
+            if (!resp.ok) throw new Error('version fetch failed');
+            const j = await resp.json();
+            modelVersionSpan.textContent = j.version ? j.version : 'N/A';
+        } catch (e) {
+            modelVersionSpan.textContent = '取得失敗';
+        }
+    }
+
+    function ensureAnonUserId() {
+        let uid = localStorage.getItem('anonUserId');
+        if (!uid) {
+            uid = 'u_' + Math.random().toString(36).slice(2);
+            localStorage.setItem('anonUserId', uid);
+        }
+        return uid;
+    }
+
+    async function sendOptInState() {
+        if (!llmOptinChk) return;
+        const uid = ensureAnonUserId();
+        // /api/user/flags へ統合送信（provide_training_data, local_training_enabled）
+        const body = {
+            user_id: uid,
+            provide_training_data: llmOptinChk.checked ? 1 : 0,
+            local_training_enabled: localTrainChk && localTrainChk.checked ? 1 : 0
+        };
+        try {
+            await fetch('http://localhost:3000/api/user/flags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        } catch (e) {
+            console.warn('flags送信失敗', e.message);
+        }
+    }
+
+    if (llmOptinChk) {
+        llmOptinChk.addEventListener('change', sendOptInState);
+    }
+    if (localTrainChk) {
+        localTrainChk.addEventListener('change', sendOptInState);
+    }
+    // 初期フラグ読み込み
+    (async () => {
+        const uid = ensureAnonUserId();
+        try {
+            const r = await fetch(`http://localhost:3000/api/user/flags/${uid}`);
+            if (r.ok) {
+                const f = await r.json();
+                if (llmOptinChk) llmOptinChk.checked = !!f.provide_training_data;
+                if (localTrainChk) localTrainChk.checked = !!f.local_training_enabled;
+            }
+        } catch {}
+    })();
+    fetchModelVersion();
 
     // --- 単体OCRアップロード（既存機能） ---
     uploadForm.addEventListener('submit', async (e) => {
@@ -161,14 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- 確定処理（差分ログ送信） ---
-    function ensureAnonUserId() {
-        let uid = localStorage.getItem('anonUserId');
-        if (!uid) {
-            uid = 'u_' + Math.random().toString(36).slice(2);
-            localStorage.setItem('anonUserId', uid);
-        }
-        return uid;
-    }
+    // 既存 ensureAnonUserId 定義は上で再定義済みにつき削除
 
     async function confirmEdits() {
         if (!currentEntryId) {
@@ -193,6 +251,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await resp.json();
             statusDiv.textContent = `確定しました（差分: ${result.diff_count}件）`;
             alert('確定して学習ログへ登録しました');
+            // 学習データ提供 & ローカル学習でない場合は中央送信
+            if (llmOptinChk && llmOptinChk.checked && !(localTrainChk && localTrainChk.checked)) {
+                try {
+                    const payload = {
+                        user_id: userId,
+                        entry_id: currentEntryId,
+                        corrected_text: ocrTextArea.value || '',
+                        store_name: storeNameInput.value || null,
+                        purchase_date: purchaseDateInput.value || null,
+                        total_amount: totalAmountInput.value ? parseInt(totalAmountInput.value,10) : null,
+                        image_path: imagePathInput.value || null,
+                        image_hash: null
+                    };
+                    await fetch('http://localhost:3000/api/training/upload', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                } catch(e) {
+                    console.warn('学習データ中央送信失敗', e.message);
+                }
+            }
         } catch (e) {
             console.error(e);
             statusDiv.textContent = '確定処理に失敗しました';

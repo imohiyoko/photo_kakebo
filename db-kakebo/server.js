@@ -70,6 +70,38 @@ db.run(`CREATE TABLE IF NOT EXISTS receipt_edit_log (
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ユーザーフラグ（学習データ提供 / ローカル学習）
+db.run(`CREATE TABLE IF NOT EXISTS user_flags (
+    user_id TEXT PRIMARY KEY,
+    provide_training_data INTEGER DEFAULT 0,
+    local_training_enabled INTEGER DEFAULT 0,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+// 学習データテーブル（中央送信用）
+db.run(`CREATE TABLE IF NOT EXISTS training_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    entry_id INTEGER,
+    image_path TEXT,
+    corrected_text TEXT,
+    store_name TEXT,
+    purchase_date TEXT,
+    total_amount INTEGER,
+    image_hash TEXT,
+    sync_status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+// LLM使用ログ
+db.run(`CREATE TABLE IF NOT EXISTS llm_logs (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id INTEGER,
+    line_count INTEGER,
+    latency_ms INTEGER,
+    fallback_used INTEGER,
+    model_version TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // インデックス（存在しない場合のみ作成）
 db.run('CREATE INDEX IF NOT EXISTS idx_receipt_edit_entry ON receipt_edit_log(entry_id)');
 db.run('CREATE INDEX IF NOT EXISTS idx_receipt_edit_field ON receipt_edit_log(field_name)');
@@ -158,6 +190,83 @@ function llmResolveConflicts(agg) {
         lines[conflict.lineIndex] = chosen;
     }
     return { resolutions, newText: lines.join('\n') };
+}
+
+// ===== LLMバックエンド抽象化 =====
+// 環境変数 LLM_BACKEND=stub|ollama|transformers
+// stub: ヒューリスティック
+// ollama: http://localhost:11434/api/generate
+// transformers: 既存 LLM_API_URL の /resolve_conflicts
+async function callLLMConflicts(agg) {
+    const backend = (process.env.LLM_BACKEND || 'stub').toLowerCase();
+    const start = Date.now();
+    if (backend === 'stub' || agg.conflicts.length === 0) {
+        const r = llmResolveConflicts(agg);
+        return { resolutions: r.resolutions.map(x=>({ ...x, fallback:true })), text: r.newText, latency: Date.now()-start, fallback:true };
+    }
+    // 競合行ペイロード構築
+    const conflictsPayload = agg.conflicts.map(cf => {
+        const before = [];
+        const after = [];
+        if (cf.lineIndex > 0) before.push(agg.mergedLines[cf.lineIndex - 1]);
+        if (cf.lineIndex + 1 < agg.mergedLines.length) after.push(agg.mergedLines[cf.lineIndex + 1]);
+        return { lineIndex: cf.lineIndex, candidates: cf.candidates, contextBefore: before, contextAfter: after };
+    });
+    try {
+        if (backend === 'transformers') {
+            const base = process.env.LLM_API_URL ? process.env.LLM_API_URL.replace(/\/$/, '') : null;
+            if (!base) throw new Error('LLM_API_URL未設定');
+            const resp = await fetch(`${base}/resolve_conflicts`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ conflicts: conflictsPayload, task:'conflict', model_version: process.env.LLM_MODEL_VERSION || 'stub_v0' })
+            });
+            const latency = Date.now()-start;
+            if (!resp.ok) throw new Error('LLM service error '+resp.status);
+            const j = await resp.json();
+            if (!Array.isArray(j.resolutions)) throw new Error('invalid LLM response');
+            const lines = agg.mergedLines.slice();
+            j.resolutions.forEach(r => { if (r.resolved && r.lineIndex>=0 && r.lineIndex<lines.length) lines[r.lineIndex]=r.resolved; });
+            return { resolutions:j.resolutions, text: lines.join('\n'), latency, fallback:false };
+        } else if (backend === 'ollama') {
+            // Ollamaシンプル生成: candidatesを列挙し最良行を返す指示プロンプト
+            const model = process.env.LLM_MODEL || 'llama3';
+            const prompt = conflictsPayload.map(cf => {
+                return `CONFLICT line=${cf.lineIndex}\nCANDIDATES:\n${cf.candidates.map((c,i)=>`[${i}] ${c}`).join('\n')}\nPick best candidate index only.`;
+            }).join('\n---\n');
+            const resp = await fetch('http://localhost:11434/api/generate', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ model, prompt, stream:false })
+            });
+            const latency = Date.now()-start;
+            if (!resp.ok) throw new Error('ollama error '+resp.status);
+            const j = await resp.json();
+            const output = j.response || '';
+            // インデックス抽出 [0] など
+            const indexRegex = /\[(\d+)\]/g;
+            const lines = agg.mergedLines.slice();
+            const resolutions = [];
+            let m; let cIdx=0;
+            while ((m = indexRegex.exec(output)) !== null && cIdx < conflictsPayload.length) {
+                const chosenIdx = parseInt(m[1],10);
+                const cf = conflictsPayload[cIdx];
+                const chosen = cf.candidates[chosenIdx] || cf.candidates[0];
+                lines[cf.lineIndex] = chosen;
+                resolutions.push({ lineIndex: cf.lineIndex, resolved: chosen, candidates: cf.candidates });
+                cIdx++;
+            }
+            // 足りない分は最長候補で埋める
+            for (; cIdx < conflictsPayload.length; cIdx++) {
+                const cf = conflictsPayload[cIdx];
+                const chosen = cf.candidates.slice().sort((a,b)=>b.length-a.length)[0];
+                lines[cf.lineIndex] = chosen;
+                resolutions.push({ lineIndex: cf.lineIndex, resolved: chosen, candidates: cf.candidates, fallback:true });
+            }
+            return { resolutions, text: lines.join('\n'), latency, fallback:false };
+        }
+    } catch (e) {
+        const r = llmResolveConflicts(agg);
+        return { resolutions: r.resolutions.map(x=>({ ...x, fallback:true, error:e.message })), text: r.newText, latency: Date.now()-start, fallback:true };
+    }
 }
 
 // ========== ユーティリティ: ユーザーID匿名化 & 差分抽出 ==========
@@ -405,6 +514,87 @@ app.post('/api/save', (req, res) => {
     });
 });
 
+// ====== 学習データアップロードAPI ======
+app.post('/api/training/upload', (req,res) => {
+    const { user_id, entry_id, corrected_text, store_name, purchase_date, total_amount, image_path, image_hash } = req.body || {};
+    if (!user_id || !corrected_text) return res.status(400).json({ error:'user_id & corrected_text required' });
+    db.get('SELECT provide_training_data, local_training_enabled FROM user_flags WHERE user_id=?', [user_id], (err, row) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        if (!row || !row.provide_training_data || row.local_training_enabled) {
+            return res.status(403).json({ error:'not allowed' });
+        }
+        db.run(`INSERT INTO training_data (user_id, entry_id, image_path, corrected_text, store_name, purchase_date, total_amount, image_hash) VALUES (?,?,?,?,?,?,?,?)`,
+            [user_id, entry_id||null, image_path||null, corrected_text, store_name||null, purchase_date||null, total_amount||null, image_hash||null], (iErr) => {
+                if (iErr) return res.status(500).json({ error:'insert failed'});
+                res.json({ status:'ok' });
+            });
+    });
+});
+// 未同期学習データ取得
+app.get('/api/training/pending', (req,res) => {
+    db.all('SELECT id,user_id,entry_id,store_name,purchase_date,total_amount,created_at FROM training_data WHERE sync_status="pending" ORDER BY id DESC LIMIT 200', [], (err, rows) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        res.json(rows);
+    });
+});
+// 同期状態更新
+app.post('/api/training/mark_synced', (req,res) => {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length===0) return res.status(400).json({ error:'ids required'});
+    const placeholders = ids.map(()=>'?').join(',');
+    db.run(`UPDATE training_data SET sync_status='synced' WHERE id IN (${placeholders})`, ids, (err) => {
+        if (err) return res.status(500).json({ error:'update failed'});
+        res.json({ status:'ok', count: ids.length });
+    });
+});
+
+// ===== ユーザーフラグ全件取得 (簡易) =====
+app.get('/api/user/flags/all', (req,res) => {
+    db.all('SELECT * FROM user_flags ORDER BY updated_at DESC LIMIT 500', [], (err, rows) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        res.json(rows);
+    });
+});
+// ===== 学習データエクスポート (JSON/CSV) =====
+function rowsToCsv(rows) {
+    if (!Array.isArray(rows) || rows.length===0) return 'id,user_id,entry_id,store_name,purchase_date,total_amount,created_at\n';
+    const header = ['id','user_id','entry_id','store_name','purchase_date','total_amount','created_at'];
+    const lines = [header.join(',')];
+    rows.forEach(r => {
+        lines.push(header.map(h => {
+            let v = r[h];
+            if (v == null) v = '';
+            const s = String(v).replace(/"/g,'""');
+            return /[",\n]/.test(s) ? '"'+s+'"' : s;
+        }).join(','));
+    });
+    return lines.join('\n');
+}
+app.get('/api/training/export.json', (req,res) => {
+    const status = req.query.status || 'pending';
+    db.all('SELECT id,user_id,entry_id,store_name,purchase_date,total_amount,created_at,corrected_text FROM training_data WHERE sync_status=? ORDER BY id DESC', [status], (err, rows) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        res.json(rows);
+    });
+});
+app.get('/api/training/export.csv', (req,res) => {
+    const status = req.query.status || 'pending';
+    db.all('SELECT id,user_id,entry_id,store_name,purchase_date,total_amount,created_at FROM training_data WHERE sync_status=? ORDER BY id DESC', [status], (err, rows) => {
+        if (err) return res.status(500).send('db error');
+        const csv = rowsToCsv(rows);
+        res.setHeader('Content-Type','text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="training_${status}.csv"`);
+        res.send(csv);
+    });
+});
+// ===== LLMログ一覧 =====
+app.get('/api/llm/logs', (req,res) => {
+    const limit = parseInt(req.query.limit||'200',10);
+    db.all('SELECT log_id,entry_id,line_count,latency_ms,fallback_used,model_version,created_at FROM llm_logs ORDER BY log_id DESC LIMIT ?', [limit], (err, rows) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        res.json(rows);
+    });
+});
 // ===== ユーザー確定差分ログ収集API =====
 app.post('/api/entries/:id/confirm', (req, res) => {
     const entryId = parseInt(req.params.id, 10);
@@ -438,9 +628,11 @@ app.post('/api/entries/:id/confirm', (req, res) => {
         const anon = anonymizeUser(userId);
         diffs.forEach(d => {
             stmt.run(entryId, d.field_name, d.old_value ?? null, d.new_value ?? null, d.edit_type, null, version, anon);
+        let llmLatency = null;
         });
         stmt.finalize();
         res.json({ status: 'ok', diff_count: diffs.length });
+                const llmStart = Date.now();
     });
 });
 
@@ -478,6 +670,16 @@ app.listen(port, () => {
 
 // ====== 複数OCRエンドポイント ======
 // 環境変数: PADDLE_OCR_API_URL, TROCR_API_URL （未設定ならスタブ）
+// スタブ用API（ローカルテスト用）
+app.post('/stub/paddle_ocr', upload.single('image'), (req,res) => {
+    // 画像内容は使わずダミー文字列生成
+    const base = 'レシート サンプル 店舗A 合計 1234';
+    res.json({ text: base + ' PADDLE' });
+});
+app.post('/stub/trocr_ocr', upload.single('image'), (req,res) => {
+    const base = 'レシート サンプル 店舗A 合計 1234';
+    res.json({ text: base + ' TROCR' });
+});
 app.post('/upload_multi', upload.single('receipt'), async (req, res) => {
     if (!req.file) return res.status(400).send('ファイルが選択されていません。');
     const startTs = Date.now();
@@ -551,59 +753,12 @@ app.post('/upload_multi', upload.single('receipt'), async (req, res) => {
     const agg = aggregateOcr(results);
     let finalText = agg.aggregatedText;
     let llmResolutions = [];
+    let llmLatency = null;
     if (useLLM && agg.conflicts.length > 0) {
-        const llmUrl = process.env.LLM_API_URL ? `${process.env.LLM_API_URL.replace(/\/$/, '')}/resolve_conflicts` : null;
-        if (llmUrl) {
-            // 衝突行に前後1行の文脈を付与
-            const conflictsPayload = agg.conflicts.map(cf => {
-                const before = [];
-                const after = [];
-                if (cf.lineIndex > 0) before.push(agg.mergedLines[cf.lineIndex - 1]);
-                if (cf.lineIndex + 1 < agg.mergedLines.length) after.push(agg.mergedLines[cf.lineIndex + 1]);
-                return {
-                    lineIndex: cf.lineIndex,
-                    candidates: cf.candidates,
-                    contextBefore: before,
-                    contextAfter: after
-                };
-            });
-            try {
-                const resp = await fetch(llmUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ conflicts: conflictsPayload, task: 'conflict', model_version: 'stub_v0' })
-                });
-                if (resp.ok) {
-                    const j = await resp.json();
-                    if (Array.isArray(j.resolutions)) {
-                        llmResolutions = j.resolutions;
-                        // 衝突行を置換
-                        const lines = agg.mergedLines.slice();
-                        llmResolutions.forEach(r => {
-                            if (typeof r.lineIndex === 'number' && r.lineIndex >=0 && r.lineIndex < lines.length) {
-                                if (r.resolved) lines[r.lineIndex] = r.resolved;
-                            }
-                        });
-                        finalText = lines.join('\n');
-                    }
-                } else {
-                    console.warn('LLM service error status', resp.status);
-                    const resolved = llmResolveConflicts(agg);
-                    finalText = resolved.newText;
-                    llmResolutions = resolved.resolutions.map(r => ({ ...r, fallback: true }));
-                }
-            } catch (e) {
-                console.warn('LLM service unreachable, fallback heuristic', e.message);
-                const resolved = llmResolveConflicts(agg);
-                finalText = resolved.newText;
-                llmResolutions = resolved.resolutions.map(r => ({ ...r, fallback: true }));
-            }
-        } else {
-            // LLM未設定: 既存ヒューリスティック
-            const resolved = llmResolveConflicts(agg);
-            finalText = resolved.newText;
-            llmResolutions = resolved.resolutions.map(r => ({ ...r, fallback: true }));
-        }
+        const r = await callLLMConflicts(agg);
+        finalText = r.text;
+        llmResolutions = r.resolutions;
+        llmLatency = r.latency;
     }
     const extracted = parseOcrText(finalText);
     const imagePath = `/uploads/${req.file.filename}`;
@@ -611,6 +766,11 @@ app.post('/upload_multi', upload.single('receipt'), async (req, res) => {
     db.run(`INSERT INTO entries (image_path, ocr_text, store_name, purchase_date, total_amount, tokens_json, model_version, ocr_candidates_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [imagePath, finalText, extracted.storeName, extracted.purchaseDate, extracted.totalAmount, JSON.stringify([]), modelVersion, JSON.stringify(results)], function(err) {
             if (err) return res.status(500).json({ error: 'DB登録失敗', detail: err.message });
+            // LLMログ挿入
+            if (useLLM && agg.conflicts.length > 0) {
+                const fallbackUsed = llmResolutions.some(r => r.fallback) ? 1 : 0;
+                db.run('INSERT INTO llm_logs (entry_id, line_count, latency_ms, fallback_used, model_version) VALUES (?,?,?,?,?)', [this.lastID, agg.conflicts.length, llmLatency || 0, fallbackUsed, process.env.LLM_MODEL_VERSION || 'stub_v0']);
+            }
             res.json({
                 id: this.lastID,
                 filePath: imagePath,
@@ -620,7 +780,60 @@ app.post('/upload_multi', upload.single('receipt'), async (req, res) => {
                 conflicts: agg.conflicts,
                 rawResults: results,
                 llmResolutions,
+                llmLatency,
                 elapsedMs: Date.now() - startTs
             });
         });
+});
+
+// ====== LLMモデルバージョン取得 ======
+app.get('/api/llm/model/latest', (req,res) => {
+    const version = process.env.LLM_MODEL_VERSION || 'stub_v0';
+    res.json({ version });
+});
+
+// ====== 学習データ提供オプトイン (旧 /api/llm/optin 仕様統合) ======
+app.post('/api/llm/optin', (req,res) => {
+    const { user_id, optin } = req.body || {};
+    if (!user_id) return res.status(400).json({ error: 'user_id required' });
+    const opt = optin ? 1 : 0;
+    db.get('SELECT user_id FROM user_flags WHERE user_id = ?', [user_id], (err,row) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        if (row) {
+            db.run('UPDATE user_flags SET provide_training_data=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?', [opt, user_id]);
+        } else {
+            db.run('INSERT INTO user_flags (user_id, provide_training_data) VALUES (?,?)', [user_id, opt]);
+        }
+        res.json({ status:'ok', provide_training_data: opt });
+    });
+});
+
+// ====== 汎用ユーザーフラグ取得/更新API ======
+app.get('/api/user/flags/:uid', (req,res) => {
+    const uid = req.params.uid;
+    db.get('SELECT * FROM user_flags WHERE user_id=?', [uid], (err,row) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        if (!row) return res.json({ user_id: uid, provide_training_data: 0, local_training_enabled: 0 });
+        res.json(row);
+    });
+});
+app.post('/api/user/flags', (req,res) => {
+    const { user_id, provide_training_data, local_training_enabled } = req.body || {};
+    if (!user_id) return res.status(400).json({ error:'user_id required'});
+    const p = provide_training_data ? 1 : 0;
+    const l = local_training_enabled ? 1 : 0;
+    db.get('SELECT user_id FROM user_flags WHERE user_id=?', [user_id], (err,row) => {
+        if (err) return res.status(500).json({ error:'db error'});
+        if (row) {
+            db.run('UPDATE user_flags SET provide_training_data=?, local_training_enabled=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?', [p,l,user_id], (uErr) => {
+                if (uErr) return res.status(500).json({ error:'update failed'});
+                res.json({ status:'ok' });
+            });
+        } else {
+            db.run('INSERT INTO user_flags (user_id, provide_training_data, local_training_enabled) VALUES (?,?,?)', [user_id,p,l], (iErr) => {
+                if (iErr) return res.status(500).json({ error:'insert failed'});
+                res.json({ status:'ok' });
+            });
+        }
+    });
 });
