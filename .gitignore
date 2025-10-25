@@ -28,6 +28,7 @@ package-lock.json
 *.bak
 *.swp
 *.swo
+*.jpg
 db-kakebo/kakebo.db
 db-kakebo/uploads/
 db-kakebo/processed/
