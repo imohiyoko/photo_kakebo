@@ -9,10 +9,20 @@
 <body>
     <div class="container">
         <h1>Photo Kakebo</h1>
-        <form id="upload-form" enctype="multipart/form-data">
-            <input type="file" id="receipt-image" name="receipt" accept="image/*" required>
-            <button type="submit" class="btn btn-primary">Upload and アナライズ</button>
-        </form>
+                <form id="upload-form" enctype="multipart/form-data" style="margin-bottom:16px;">
+                        <input type="file" id="receipt-image" name="receipt" accept="image/*" required>
+                        <fieldset style="border:1px solid #ccc; padding:8px; margin-top:12px;">
+                            <legend style="font-size:0.9rem;">OCRエンジン選択</legend>
+                            <label style="margin-right:12px; display:inline-block;"><input type="checkbox" class="ocr-engine-chk" value="tesseract" checked> Tesseract</label>
+                            <label style="margin-right:12px; display:inline-block;"><input type="checkbox" class="ocr-engine-chk" value="paddle"> PaddleOCR</label>
+                            <label style="margin-right:12px; display:inline-block;"><input type="checkbox" class="ocr-engine-chk" value="trocr"> TrOCR</label>
+                            <label style="margin-right:12px; display:inline-block;"><input type="checkbox" id="use-llm-chk"> LLM補完を使用</label>
+                        </fieldset>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                            <button type="submit" class="btn btn-primary">単体OCRアップロード</button>
+                            <button type="button" id="upload-multi-btn" class="btn btn-secondary">選択エンジンでマルチOCR</button>
+                        </div>
+                </form>
 
         <div id="result" style="margin-top: 20px;">
             <h2>OCR Result</h2>
@@ -24,6 +34,10 @@
                     <label for="ocr-text-area">OCR Text (Editable)</label>
                     <textarea id="ocr-text-area" rows="10" class="form-control"></textarea>
                 </div>
+                                                    <div id="conflicts-box" style="display:none; border:1px solid #ccc; padding:8px; margin-bottom:12px;">
+                                                        <h3 style="margin-top:0; font-size:1rem;">未一致候補 (LLM補完対象)</h3>
+                                                        <ul id="conflicts-list" style="padding-left:18px; margin:4px 0;"></ul>
+                                                    </div>
                 <div class="form-group">
                     <label for="store-name">Store Name</label>
                     <input type="text" id="store-name" class="form-control">
@@ -36,7 +50,10 @@
                     <label for="total-amount">Total Amount</label>
                     <input type="number" id="total-amount" class="form-control" placeholder="e.g., 1234">
                 </div>
-                <button id="save-button" class="btn btn-success">Save Data</button>
+                                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+                                    <button id="save-button" class="btn btn-success">Save Draft</button>
+                                    <button id="confirm-button" class="btn btn-primary">確定して学習ログへ</button>
+                                </div>
             </div>
             
             <div id="status"></div>
