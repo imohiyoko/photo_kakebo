@@ -29,29 +29,30 @@
 -   LLMによる不一致行の補完（`LLM_API_URL` が設定されている場合）
 -   ユーザー修正差分ログから辞書自動生成 / 微調整用データ抽出
 
-## 🚀 環境構築と実行方法（基本）
+## 🚀 環境構築と実行方法（基本 / Phase3 以降）
 
-1.  **リポジトリをクローンします。**
+Phase3 移行によりレガシー `db-kakebo/server.js` は削除され、モジュール化バックエンドへ統合されました。
+
+1. **リポジトリをクローンします。**
     ```bash
     git clone https://github.com/imohiyoko/photo_kakebo.git
     cd photo_kakebo
     ```
 
-2.  **バックエンドの依存関係をインストールします。**
+2. **依存関係をインストールします。** (新バックエンドは `apps/backend/src/server.js` で動作します)
     ```bash
-    cd db-kakebo
     npm install
     ```
 
-3.  **バックエンドサーバーを起動します。**
+3. **バックエンドを起動します。**
     ```bash
     npm start
     ```
-    サーバーが `http://localhost:3000` で起動します。
-    データベースファイル (`kakebo.db`) やアップロード用のディレクトリ (`uploads`) は、初回起動時に自動で作成されます。
+    デフォルトで `PORT=3001` のため `http://localhost:3001` が API 入口になります。
+    SQLite ファイルや `uploads` ディレクトリは初回起動時に自動生成されます。
 
-4.  **フロントエンドを開きます。**
-    ルートの `frontend/index.html` をブラウザで開きます。
+4. **フロントエンドを開きます。**
+    ルートの `frontend/index.html` をブラウザで開くか、後続で SPA 化予定の `apps/user-web/` へ移行していく計画です。
 
 ## 🔁 マルチOCR + LLM を有効にする
 
@@ -100,25 +101,30 @@ LLM_API_URL= (任意)
 
 `LLM_API_URL` 未設定時はヒューリスティック（最長候補）で衝突解決します。
 
-## 📁 ディレクトリ構成（抜粋）
+## 📁 ディレクトリ構成（抜粋 / 更新後）
 
 ```
 .
-├── db-kakebo/         # バックエンド (Node.js/Express + OCR集約 + LLM連携)
-│   ├── node_modules/
-│   ├── uploads/       # アップロードされた画像が保存される
-│   ├── kakebo.db      # SQLiteデータベースファイル
-│   ├── package.json
-│   ├── server.js      # APIサーバー本体
-│   ├── extract_conflicts.js # 衝突行学習データ抽出
-│   ├── update_ocr_dict.js   # 自動補正辞書生成
-│   ├── llm/service/app.py   # FastAPI LLM衝突解決スタブ
+├── apps/
+│   ├── backend/              # 新バックエンド (分割済み Express ルート構成)
+│   │   └── src/
+│   │       ├── server.js     # エントリ (PORT=3001)
+│   │       ├── routes/       # entries.js, ocr.js, llm.js など
+│   │       ├── services/     # diff.js, ocrUtils.js (今後抽象化予定)
+│   │       └── infra/        # db.js (DB接続と初期化)
+│   ├── admin/                # 管理コンソール (移行途中)
+│   └── user-web/             # 一般ユーザーWeb (frontend/ から段階的移行予定)
 │
-├── frontend/          # フロントエンド
-│   ├── index.html
-│   ├── script.js
-│   └── style.css
+├── db-kakebo/                # レガシー残存スクリプト置き場（server.js は削除済）
+│   ├── extract_conflicts.js
+│   ├── update_ocr_dict.js
+│   ├── export_edits.js
+│   └── llm/service/app.py    # FastAPI LLM 衝突解決スタブ（将来 apps/llm-service/ へ）
 │
-├── .gitignore
+├── frontend/                 # 旧フロント (静的) 段階的に apps/user-web/ へ移行
+├── ARCHITECTURE.md
+├── package.json
 └── README.md
 ```
+
+レガシーAPIサーバは削除済みのため、`db-kakebo/server.js` を参照する古い手順・ポート 3000 は利用しないでください。
