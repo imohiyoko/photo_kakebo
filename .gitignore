@@ -1,53 +1,33 @@
-# Python仮想環境
-venv/
+# IDE/Editor specific
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python
 __pycache__/
 *.pyc
+venv/
 
 # Node.js依存
 node_modules/
 npm-debug.log
 yarn-debug.log
 yarn-error.log
-
-# OS・エディタ一時ファイル
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
-
-# 一時ファイル・生成物
-*.log
-*.tmp
-*.bak
-
-# DB・アップロード・生成画像
-db-kakebo/*.sqlite3
-db-kakebo/uploads/
-db-kakebo/processed/
-db-kakebo/*.db
-
-# 一時的なOCR画像
-*.jpg
-*.png
+package-lock.json
 
 # 環境依存設定（本番用は追跡しない）
 .env
 .env.*
 
-# 追跡したいもの（除外解除）
-!db-kakebo/schema.sql
-!db-kakebo/crop_receipt.py
-!db-kakebo/server.js
-!frontend/
-!README.md
-!package.json
-!package-lock.json
-!requirements.txt
-
-# サンプルやテンプレートは追跡
-!config.sample.json
-
-# Python venv
-venv/
-
-*.jpg
+# Application generated files
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+db-kakebo/kakebo.db
+db-kakebo/uploads/
+db-kakebo/processed/
