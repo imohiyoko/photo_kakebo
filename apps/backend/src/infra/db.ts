@@ -1,10 +1,10 @@
-const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database(path.join(process.cwd(),'kakebo.db'));
+import path from 'path';
+import sqlite3 from 'sqlite3';
 
-function initSchema() {
+const db = new sqlite3.Database(path.join(process.cwd(), 'kakebo.db'));
+
+export function initSchema(): void {
   db.serialize(() => {
-    // entries
     db.run(`CREATE TABLE IF NOT EXISTS entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       image_path TEXT NOT NULL,
@@ -19,7 +19,6 @@ function initSchema() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('entries table:', err); });
 
-    // model_version
     db.run(`CREATE TABLE IF NOT EXISTS model_version (
       version_id INTEGER PRIMARY KEY AUTOINCREMENT,
       component TEXT NOT NULL,
@@ -27,7 +26,6 @@ function initSchema() {
       deployed_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('model_version table:', err); });
 
-    // receipt_edit_log
     db.run(`CREATE TABLE IF NOT EXISTS receipt_edit_log (
       edit_id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry_id INTEGER NOT NULL,
@@ -41,7 +39,6 @@ function initSchema() {
       timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('receipt_edit_log table:', err); });
 
-    // user_flags
     db.run(`CREATE TABLE IF NOT EXISTS user_flags (
       user_id TEXT PRIMARY KEY,
       provide_training_data INTEGER DEFAULT 0,
@@ -49,7 +46,6 @@ function initSchema() {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('user_flags table:', err); });
 
-    // training_data
     db.run(`CREATE TABLE IF NOT EXISTS training_data (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
@@ -64,7 +60,6 @@ function initSchema() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('training_data table:', err); });
 
-    // llm_logs
     db.run(`CREATE TABLE IF NOT EXISTS llm_logs (
       log_id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry_id INTEGER,
@@ -80,5 +75,4 @@ function initSchema() {
   });
 }
 
-initSchema();
-module.exports = { db, initSchema };
+export { db };

@@ -1,7 +1,12 @@
 import 'dotenv/config';
 import express, { Application } from 'express';
 import path from 'path';
-import { db } from './infra/db'; // ensure schema init side-effects
+import { db, initSchema } from './infra/db';
+// TypeScript化したdb.tsを優先的にimport
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+// import { db, initSchema } from './infra/db.ts';
+// DBスキーマ初期化を明示的に実行
+initSchema();
 
 // Routers (JS files allowed via allowJs)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
