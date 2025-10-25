@@ -67,7 +67,7 @@ async function loadAllFlags(){
   const st = document.getElementById('status');
   st.textContent = '全件取得中...';
   try {
-    const r = await fetch('http://localhost:3000/api/user/flags/all');
+  const r = await fetch('http://localhost:3001/api/user/flags/all');
     if(!r.ok) throw new Error('flags all fetch failed');
     const arr = await r.json();
     const tb = document.getElementById('flags-tbody');
@@ -86,7 +86,7 @@ async function loadOne(uid){
   const st = document.getElementById('status');
   st.textContent = '読み込み中...';
   try {
-    const r = await fetch('http://localhost:3000/api/user/flags/' + encodeURIComponent(uid));
+  const r = await fetch('http://localhost:3001/api/user/flags/' + encodeURIComponent(uid));
     if(!r.ok) throw new Error('fetch failed');
     const j = await r.json();
     const tb = document.getElementById('flags-tbody');
@@ -112,7 +112,7 @@ async function saveFlag(){
   const st = document.getElementById('status');
   st.textContent='送信中...';
   try {
-    const r = await fetch('http://localhost:3000/api/user/flags', {
+  const r = await fetch('http://localhost:3001/api/user/flags', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     if(!r.ok) throw new Error('保存失敗');
@@ -125,7 +125,7 @@ async function loadPending(){
   const tb = document.getElementById('pending-tbody');
   tb.innerHTML='';
   try {
-    const r = await fetch('http://localhost:3000/api/training/pending');
+  const r = await fetch('http://localhost:3001/api/training/pending');
     if(!r.ok) throw new Error('pending fetch failed');
     const rows = await r.json();
     rows.forEach(rec => {
@@ -144,7 +144,7 @@ async function markSelectedSynced(){
   if(checks.length===0){ alert('対象を選択してください'); return; }
   const ids=checks.map(c=>parseInt(c.value,10)).filter(Number.isFinite);
   try {
-    const r = await fetch('http://localhost:3000/api/training/mark_synced',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids}) });
+  const r = await fetch('http://localhost:3001/api/training/mark_synced',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids}) });
     if(!r.ok) throw new Error('mark synced failed');
     await loadPending();
     alert('同期状態更新しました');
@@ -160,13 +160,13 @@ function downloadBlob(content, filename, mime) {
 }
 async function exportJson(){
   const status = document.getElementById('export-status').value;
-  const r = await fetch('http://localhost:3000/api/training/export.json?status='+encodeURIComponent(status));
+  const r = await fetch('http://localhost:3001/api/training/export.json?status='+encodeURIComponent(status));
   const data = await r.json();
   downloadBlob(JSON.stringify(data,null,2), `training_${status}.json`, 'application/json');
 }
 async function exportCsv(){
   const status = document.getElementById('export-status').value;
-  const r = await fetch('http://localhost:3000/api/training/export.csv?status='+encodeURIComponent(status));
+  const r = await fetch('http://localhost:3001/api/training/export.csv?status='+encodeURIComponent(status));
   const txt = await r.text();
   downloadBlob(txt, `training_${status}.csv`, 'text/csv');
 }
@@ -176,7 +176,7 @@ async function loadLlmLogs(){
   const tb = document.getElementById('llm-logs-tbody');
   tb.innerHTML='';
   try {
-    const r = await fetch('http://localhost:3000/api/llm/logs?limit='+limit);
+  const r = await fetch('http://localhost:3001/api/llm/logs?limit='+limit);
     if(!r.ok) throw new Error('logs fetch failed');
     const rows = await r.json();
     rows.forEach(l => {

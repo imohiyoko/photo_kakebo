@@ -1,4 +1,17 @@
 require('dotenv').config();
+/**
+ * ================= DEPRECATION NOTICE =================
+ * この server.js はモノリシック構成 (ポート3000) です。
+ * 新しいモジュール化バックエンドは `apps/backend/src/server.js` (デフォルト: ポート3001) に移行済み。
+ * 移行ステップ:
+ *  1. フロントの fetch URL を 3001 へ切替
+ *  2. 本ファイルの /upload /upload_multi /api/* 利用を停止
+ *  3. `MIGRATION.md` の Phase プランに従い削除
+ * 一時的に両方起動して比較/検証可能。環境変数 KEEP_LEGACY=1 の場合のみ警告抑制。
+ */
+if (!process.env.KEEP_LEGACY) {
+    console.warn('[DEPRECATED] Using legacy server.js (port 3000). Please migrate to apps/backend/src/server.js');
+}
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -13,8 +26,17 @@ const tmp = require('tmp');
 const app = express();
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// フロント/管理コンソールの静的配信 (再構成準備)
+try {
+    app.use('/', express.static(path.join(__dirname, '..', 'frontend')));
+    app.use('/admin', express.static(path.join(__dirname, '..', 'admin')));
+} catch (e) {
+    console.warn('静的ディレクトリ設定失敗:', e.message);
+}
 
 const port = 3000;
+// Phase 1: レガシー書込禁止 (KEEP_LEGACY_WRITE=1 で一時解除)
+const READ_ONLY = !process.env.KEEP_LEGACY_WRITE;
 
 // Create uploads directory if it doesn't exist
 const uploadDir = 'uploads';
@@ -394,6 +416,7 @@ function extractItemLines(words) {
 
 // API endpoint for uploading an image
 app.post('/upload', upload.single('receipt'), async (req, res) => {
+    if (READ_ONLY) return res.status(503).json({ error: 'Legacy server is read-only (Phase1)', migrate: 'Use port 3001 /upload', phase: '1' });
     if (!req.file) {
         return res.status(400).send('ファイルが選択されていません。');
     }
@@ -495,6 +518,7 @@ app.post('/upload', upload.single('receipt'), async (req, res) => {
 
 // API endpoint to save corrected text and other details
 app.post('/api/save', (req, res) => {
+    if (READ_ONLY) return res.status(503).json({ error: 'Legacy server is read-only (Phase1)', migrate: 'Use port 3001 /api/save', phase: '1' });
     const { id, correctedText, totalAmount, storeName, purchaseDate } = req.body;
 
     if (!id) {
@@ -516,6 +540,7 @@ app.post('/api/save', (req, res) => {
 
 // ====== 学習データアップロードAPI ======
 app.post('/api/training/upload', (req,res) => {
+    if (READ_ONLY) return res.status(503).json({ error: 'Legacy server is read-only (Phase1)', migrate: 'Use port 3001 /api/training/upload', phase: '1' });
     const { user_id, entry_id, corrected_text, store_name, purchase_date, total_amount, image_path, image_hash } = req.body || {};
     if (!user_id || !corrected_text) return res.status(400).json({ error:'user_id & corrected_text required' });
     db.get('SELECT provide_training_data, local_training_enabled FROM user_flags WHERE user_id=?', [user_id], (err, row) => {
@@ -597,6 +622,7 @@ app.get('/api/llm/logs', (req,res) => {
 });
 // ===== ユーザー確定差分ログ収集API =====
 app.post('/api/entries/:id/confirm', (req, res) => {
+    if (READ_ONLY) return res.status(503).json({ error: 'Legacy server is read-only (Phase1)', migrate: 'Use port 3001 /api/entries/:id/confirm', phase: '1' });
     const entryId = parseInt(req.params.id, 10);
     const { edited, userId } = req.body;
     if (!entryId || !edited) return res.status(400).json({ error: 'invalid parameters' });
@@ -681,6 +707,7 @@ app.post('/stub/trocr_ocr', upload.single('image'), (req,res) => {
     res.json({ text: base + ' TROCR' });
 });
 app.post('/upload_multi', upload.single('receipt'), async (req, res) => {
+    if (READ_ONLY) return res.status(503).json({ error: 'Legacy server is read-only (Phase1)', migrate: 'Use port 3001 /upload_multi', phase: '1' });
     if (!req.file) return res.status(400).send('ファイルが選択されていません。');
     const startTs = Date.now();
     let ocrInputPath = req.file.path;

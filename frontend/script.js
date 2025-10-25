@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchModelVersion() {
         if (!modelVersionSpan) return;
         try {
-            const resp = await fetch('http://localhost:3000/api/llm/model/latest');
+            const resp = await fetch('http://localhost:3001/api/llm/model/latest');
             if (!resp.ok) throw new Error('version fetch failed');
             const j = await resp.json();
             modelVersionSpan.textContent = j.version ? j.version : 'N/A';
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
             local_training_enabled: localTrainChk && localTrainChk.checked ? 1 : 0
         };
         try {
-            await fetch('http://localhost:3000/api/user/flags', {
+            await fetch('http://localhost:3001/api/user/flags', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
     (async () => {
         const uid = ensureAnonUserId();
         try {
-            const r = await fetch(`http://localhost:3000/api/user/flags/${uid}`);
+            const r = await fetch(`http://localhost:3001/api/user/flags/${uid}`);
             if (r.ok) {
                 const f = await r.json();
                 if (llmOptinChk) llmOptinChk.checked = !!f.provide_training_data;
@@ -103,11 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
         conflictsBox.style.display = 'none';
         conflictsList.innerHTML = '';
         try {
-            const response = await fetch('http://localhost:3000/upload', { method: 'POST', body: formData });
+            const response = await fetch('http://localhost:3001/upload', { method: 'POST', body: formData });
             if (!response.ok) throw new Error(`サーバーエラー: ${response.statusText}`);
             const result = await response.json();
             statusDiv.textContent = '解析が完了しました。内容を確認・修正してください。';
-            uploadedImage.src = `http://localhost:3000${result.filePath}`;
+            uploadedImage.src = `http://localhost:3001${result.filePath}`;
             uploadedImage.style.display = 'block';
             editForm.style.display = 'block';
             currentEntryId = result.id || null;
@@ -158,11 +158,11 @@ document.addEventListener('DOMContentLoaded', () => {
         conflictsBox.style.display = 'none';
         conflictsList.innerHTML = '';
         try {
-            const resp = await fetch('http://localhost:3000/upload_multi', { method: 'POST', body: formData });
+            const resp = await fetch('http://localhost:3001/upload_multi', { method: 'POST', body: formData });
             if (!resp.ok) throw new Error('サーバーエラー');
             const result = await resp.json();
             statusDiv.textContent = 'マルチOCR完了。内容確認してください。';
-            uploadedImage.src = `http://localhost:3000${result.filePath}`;
+            uploadedImage.src = `http://localhost:3001${result.filePath}`;
             uploadedImage.style.display = 'block';
             editForm.style.display = 'block';
             currentEntryId = result.id || null;
@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.textContent = '保存中です...';
 
         try {
-            const response = await fetch('http://localhost:3000/api/save', {
+            const response = await fetch('http://localhost:3001/api/save', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -242,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const userId = ensureAnonUserId();
         statusDiv.textContent = '確定処理中...';
         try {
-            const resp = await fetch(`http://localhost:3000/api/entries/${currentEntryId}/confirm`, {
+            const resp = await fetch(`http://localhost:3001/api/entries/${currentEntryId}/confirm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ edited, userId })
@@ -264,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         image_path: imagePathInput.value || null,
                         image_hash: null
                     };
-                    await fetch('http://localhost:3000/api/training/upload', {
+                    await fetch('http://localhost:3001/api/training/upload', {
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
                         body: JSON.stringify(payload)
@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to fetch and display entries
     const fetchEntries = async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/entries');
+            const response = await fetch('http://localhost:3001/api/entries');
             if (!response.ok) {
                 throw new Error(`サーバーエラー: ${response.statusText}`);
             }
