@@ -1,6 +1,9 @@
 {
   "scripts": {
-    "start": "node apps/backend/src/server.js"
+    "start": "ts-node apps/backend/src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"apps/backend/src/**/*.{js,ts}\" --max-warnings=0"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
@@ -11,5 +14,16 @@
     "multer": "^1.4.5-lts.1",
     "sqlite3": "^5.1.7",
     "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.11.30",
+    "@types/sqlite3": "^3.1.8",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^9.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
   }
 }
